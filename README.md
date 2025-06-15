@@ -142,7 +142,7 @@ List `Student`s (`FullName`) who are enrolled in at least one `Class` but have N
 List all `grade_id`s, `value`s, `student_id`s, and `exam_id`s. Add a column `GradeCategory` ('High' if value >= 8.0, 'Medium' if value >= 6.0 and < 8.0, 'Low' if value < 6.0).
 
 **Problem 5.2:**
-Display `payment_id`, `payment_date`, `amount`, `status`, `student_id` for `Payment`s where the `notes` field is NOT NULL AND the `payment_method` is different from the `payment_method` of the payment with the highest `amount`.
+Display `payment_id`, `payment_date`, `amount`, `status`, `student_id` for `Payment`s where the `payment_method` is different from the `payment_method` of the payment with the highest `amount`.
 
 **Problem 5.3:**
 Show the `course_id`, course `description`, the `id` of its `Course_Material`, material `description`, and the `FullName` of any `Teacher` who teaches a class for that course.
