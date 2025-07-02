@@ -1,5 +1,4 @@
 
--- Step 1: Database Creation and Selection
 IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'EducateDB')
 BEGIN
     PRINT 'Creating database EducateDB...';
@@ -10,10 +9,13 @@ GO
 USE EducateDB;
 GO
 
--- Step 2: Drop Existing Objects for a Clean Re-run
 PRINT 'Dropping existing objects...';
 IF OBJECT_ID('usp_GetStudentEnrollments', 'P') IS NOT NULL DROP PROCEDURE usp_GetStudentEnrollments;
 IF OBJECT_ID('usp_ProcessCoursePayment', 'P') IS NOT NULL DROP PROCEDURE usp_ProcessCoursePayment;
+IF OBJECT_ID('usp_UpdateStudentBalance', 'P') IS NOT NULL DROP PROCEDURE usp_UpdateStudentBalance;
+IF OBJECT_ID('dbo.fn_GetStudentFullName', 'FN') IS NOT NULL DROP FUNCTION dbo.fn_GetStudentFullName;
+IF OBJECT_ID('dbo.fn_CalculateStudentAge', 'FN') IS NOT NULL DROP FUNCTION dbo.fn_CalculateStudentAge;
+IF OBJECT_ID('dbo.fn_GetClassesByTeacher', 'IF') IS NOT NULL DROP FUNCTION dbo.fn_GetClassesByTeacher;
 IF OBJECT_ID('V_Class_Details', 'V') IS NOT NULL DROP VIEW V_Class_Details;
 IF OBJECT_ID('V_Student_Grades', 'V') IS NOT NULL DROP VIEW V_Student_Grades;
 IF OBJECT_ID('V_Course_Summary', 'V') IS NOT NULL DROP VIEW V_Course_Summary;
@@ -21,6 +23,8 @@ IF OBJECT_ID('V_Teacher_Workload', 'V') IS NOT NULL DROP VIEW V_Teacher_Workload
 IF OBJECT_ID('trg_UpdateCourseLastModified', 'TR') IS NOT NULL DROP TRIGGER trg_UpdateCourseLastModified;
 IF OBJECT_ID('trg_PreventStudentDeletionWithBalance', 'TR') IS NOT NULL DROP TRIGGER trg_PreventStudentDeletionWithBalance;
 IF OBJECT_ID('trg_LogStudentCreation', 'TR') IS NOT NULL DROP TRIGGER trg_LogStudentCreation;
+IF OBJECT_ID('trg_LogStudentUpdate', 'TR') IS NOT NULL DROP TRIGGER trg_LogStudentUpdate;
+IF OBJECT_ID('trg_LogStudentDeletion', 'TR') IS NOT NULL DROP TRIGGER trg_LogStudentDeletion;
 IF OBJECT_ID('trg_PreventDuplicateEnrollment', 'TR') IS NOT NULL DROP TRIGGER trg_PreventDuplicateEnrollment;
 IF OBJECT_ID('Grade', 'U') IS NOT NULL DROP TABLE Grade;
 IF OBJECT_ID('Payment', 'U') IS NOT NULL DROP TABLE Payment;
@@ -29,28 +33,30 @@ IF OBJECT_ID('Class_Student', 'U') IS NOT NULL DROP TABLE Class_Student;
 IF OBJECT_ID('Course_Material', 'U') IS NOT NULL DROP TABLE Course_Material;
 IF OBJECT_ID('Class', 'U') IS NOT NULL DROP TABLE Class;
 IF OBJECT_ID('Course', 'U') IS NOT NULL DROP TABLE Course;
+IF OBJECT_ID('AuditLog', 'U') IS NOT NULL DROP TABLE AuditLog;
 IF OBJECT_ID('Student', 'U') IS NOT NULL DROP TABLE Student;
 IF OBJECT_ID('Teacher', 'U') IS NOT NULL DROP TABLE Teacher;
 GO
 
--- ===================================================================
 -- 3. TABLE CREATION
--- ===================================================================
-PRINT 'Creating tables...';
+PRINT 'Creating tables with robust constraints...';
 
 CREATE TABLE Teacher (
     id VARCHAR(5) PRIMARY KEY,
     first_name NVARCHAR(50) NOT NULL,
     last_name NVARCHAR(50) NOT NULL,
     date_birth DATE,
-    gender NVARCHAR(3) CHECK (gender IN (N'Nam', N'Nữ')),
+    gender NVARCHAR(3),
     email VARCHAR(100) UNIQUE NOT NULL,
     phone VARCHAR(20),
     address NVARCHAR(255),
     city NVARCHAR(50),
     description NVARCHAR(255),
     user_name VARCHAR(50) UNIQUE NOT NULL,
-    password VARCHAR(255) NOT NULL -- Store HASHED passwords in a real application!
+    password VARCHAR(255) NOT NULL,
+    CONSTRAINT CK_Teacher_ID CHECK (id LIKE 'TE[0-9][0-9][0-9]'),
+    CONSTRAINT CK_Teacher_Gender CHECK (gender IN (N'Nam', N'Nữ')),
+    CONSTRAINT CK_Teacher_Email CHECK (email LIKE '%_@__%.__%')
 );
 GO
 
@@ -59,7 +65,7 @@ CREATE TABLE Student (
     first_name NVARCHAR(50) NOT NULL,
     last_name NVARCHAR(50) NOT NULL,
     date_birth DATE,
-    gender NVARCHAR(3) CHECK (gender IN (N'Nam', N'Nữ')),
+    gender NVARCHAR(3),
     email VARCHAR(100) UNIQUE NOT NULL,
     phone VARCHAR(20),
     address NVARCHAR(255),
@@ -67,7 +73,11 @@ CREATE TABLE Student (
     user_name VARCHAR(50) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
     balance DECIMAL(12,2),
-    created_date DATE
+    created_date DATE,
+    CONSTRAINT CK_Student_ID CHECK (id LIKE 'ST[0-9][0-9][0-9]'),
+    CONSTRAINT CK_Student_Gender CHECK (gender IN (N'Nam', N'Nữ')),
+    CONSTRAINT CK_Student_Email CHECK (email LIKE '%_@__%.__%'),
+    CONSTRAINT CK_Student_Balance CHECK (balance >= 0)
 );
 GO
 
@@ -75,7 +85,8 @@ CREATE TABLE Course (
     id NVARCHAR(50) PRIMARY KEY,
     description NVARCHAR(MAX),
     last_modified DATETIME2,
-    tuition_fee DECIMAL(12,2)
+    tuition_fee DECIMAL(12,2),
+    CONSTRAINT CK_Course_TuitionFee CHECK (tuition_fee >= 0)
 );
 GO
 
@@ -86,7 +97,9 @@ CREATE TABLE Course_Material (
     material_type NVARCHAR(50),
     material_url VARCHAR(255),
     date_add DATE,
-    FOREIGN KEY (course_id) REFERENCES Course(id)
+    FOREIGN KEY (course_id) REFERENCES Course(id),
+    CONSTRAINT CK_Course_Material_ID CHECK (id LIKE 'CM[0-9][0-9][0-9]'),
+    CONSTRAINT CK_Course_Material_Type CHECK (material_type IN (N'Sách giáo trình', N'Sách bài tập',N'Sách từ vựng', N'Tệp âm thanh', N'Video Links', N'Học liệu', N'Sách luyện đề', N'Tài liệu tham khảo'))
 );
 GO
 
@@ -99,7 +112,9 @@ CREATE TABLE Class (
     schedule_info NVARCHAR(100),
     room_number NVARCHAR(20),
     FOREIGN KEY (teacher_id) REFERENCES Teacher(id),
-    FOREIGN KEY (course_id) REFERENCES Course(id)
+    FOREIGN KEY (course_id) REFERENCES Course(id),
+    CONSTRAINT CK_Class_Dates CHECK (end_date >= start_date),
+    CONSTRAINT CK_Class_RoomNumber CHECK (room_number LIKE 'P[1-3][0-9][0-9]')
 );
 GO
 
@@ -120,20 +135,25 @@ CREATE TABLE Exam (
     class_id NVARCHAR(20) NOT NULL,
     exam_type NVARCHAR(50),
     duration_minutes INT,
-    FOREIGN KEY (class_id) REFERENCES Class(id)
+    FOREIGN KEY (class_id) REFERENCES Class(id),
+    CONSTRAINT CK_Exam_ID CHECK (id LIKE 'EX[0-9][0-9][0-9]'),
+    CONSTRAINT CK_Exam_Type CHECK (exam_type IN (N'Midterm', N'Final', N'Quiz', N'Mock Test', N'Speaking Test')),
+    CONSTRAINT CK_Exam_Duration CHECK (duration_minutes > 0)
 );
 GO
 
 CREATE TABLE Grade (
     id VARCHAR(5) PRIMARY KEY,
-    value DECIMAL(4,2) NOT NULL CHECK (value >= 0.00 AND value <= 10.00),
+    value DECIMAL(4,2) NOT NULL,
     student_id VARCHAR(5) NOT NULL,
     exam_id VARCHAR(5) NOT NULL,
     class_id NVARCHAR(20),
     date DATE,
     FOREIGN KEY (student_id) REFERENCES Student(id),
     FOREIGN KEY (exam_id) REFERENCES Exam(id),
-    FOREIGN KEY (class_id) REFERENCES Class(id)
+    FOREIGN KEY (class_id) REFERENCES Class(id),
+    CONSTRAINT CK_Grade_ID CHECK (id LIKE 'GR[0-9][0-9][0-9]'),
+    CONSTRAINT CK_Grade_Value CHECK (value >= 0.00 AND value <= 10.00)
 );
 GO
 
@@ -141,19 +161,32 @@ CREATE TABLE Payment (
     id VARCHAR(5) PRIMARY KEY,
     payment_date DATE,
     amount DECIMAL(12,2) NOT NULL,
-    status NVARCHAR(20) NOT NULL CHECK (status IN (N'Success', N'Failed')),
+    status NVARCHAR(20) NOT NULL,
     student_id VARCHAR(5) NOT NULL,
     course_id NVARCHAR(50) NOT NULL,
     payment_method NVARCHAR(50),
     notes NVARCHAR(255),
     FOREIGN KEY (student_id) REFERENCES Student(id),
-    FOREIGN KEY (course_id) REFERENCES Course(id)
+    FOREIGN KEY (course_id) REFERENCES Course(id),
+    CONSTRAINT CK_Payment_ID CHECK (id LIKE 'PA[0-9][0-9][0-9]'),
+    CONSTRAINT CK_Payment_Amount CHECK (amount > 0),
+    CONSTRAINT CK_Payment_Status CHECK (status IN (N'Success', N'Failed')),
+    CONSTRAINT CK_Payment_Method CHECK (payment_method IN (N'Tiền mặt', N'Chuyển khoản', N'Thẻ tín dụng', N'Momo'))
 );
 GO
 
--- ===================================================================
+CREATE TABLE AuditLog (
+    LogID INT PRIMARY KEY IDENTITY(1,1),
+    TableName NVARCHAR(128) NOT NULL,
+    RecordID VARCHAR(50) NOT NULL,
+    ActionType NVARCHAR(50) NOT NULL,
+    ChangeDetails NVARCHAR(MAX),
+    ChangedBy NVARCHAR(128) DEFAULT SUSER_SNAME(),
+    ChangedAt DATETIME2 DEFAULT GETDATE()
+);
+GO
+
 -- 4. VIEWS
--- ===================================================================
 PRINT 'Creating views...';
 GO
 
@@ -207,9 +240,47 @@ LEFT JOIN Class cl ON t.id = cl.teacher_id
 GROUP BY t.id, t.first_name, t.last_name;
 GO
 
--- ===================================================================
--- 5. STORED PROCEDURES
--- ===================================================================
+-- 5. FUNCTIONS
+PRINT 'Creating functions...';
+GO
+
+CREATE FUNCTION dbo.fn_GetStudentFullName (@StudentID VARCHAR(5))
+RETURNS NVARCHAR(101)
+AS
+BEGIN
+    DECLARE @FullName NVARCHAR(101);
+    SELECT @FullName = last_name + N' ' + first_name
+    FROM Student
+    WHERE id = @StudentID;
+    RETURN @FullName;
+END
+GO
+
+CREATE FUNCTION dbo.fn_CalculateStudentAge (@DateOfBirth DATE)
+RETURNS INT
+AS
+BEGIN
+    RETURN DATEDIFF(YEAR, @DateOfBirth, GETDATE()) -
+           CASE WHEN (MONTH(@DateOfBirth) > MONTH(GETDATE())) OR (MONTH(@DateOfBirth) = MONTH(GETDATE()) AND DAY(@DateOfBirth) > DAY(GETDATE())) THEN 1 ELSE 0 END;
+END
+GO
+
+CREATE FUNCTION dbo.fn_GetClassesByTeacher (@TeacherID VARCHAR(5))
+RETURNS TABLE
+AS
+RETURN
+(
+    SELECT
+        cl.id AS ClassID,
+        cl.schedule_info AS Schedule,
+        co.description AS CourseDescription
+    FROM Class cl
+    JOIN Course co ON cl.course_id = co.id
+    WHERE cl.teacher_id = @TeacherID
+);
+GO
+
+-- 6. STORED PROCEDURES
 PRINT 'Creating stored procedures...';
 GO
 
@@ -217,11 +288,7 @@ CREATE PROCEDURE usp_GetStudentEnrollments @StudentID VARCHAR(5)
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT
-        ClassID,
-        Schedule,
-        CourseDescription,
-        TeacherFullName
+    SELECT ClassID, Schedule, CourseDescription, TeacherFullName
     FROM V_Class_Details
     WHERE ClassID IN (SELECT class_id FROM Class_Student WHERE student_id = @StudentID);
 END
@@ -233,17 +300,15 @@ CREATE PROCEDURE usp_UpdateStudentBalance
 AS
 BEGIN
     SET NOCOUNT ON;
+    DECLARE @NewBalance DECIMAL(12,2);
     IF NOT EXISTS (SELECT 1 FROM Student WHERE id = @StudentID)
     BEGIN
         PRINT N'Lỗi: Không tìm thấy sinh viên với ID ' + @StudentID;
         RETURN;
     END
-
-    UPDATE Student
-    SET balance = balance + @AmountToAdd
-    WHERE id = @StudentID;
-
-    PRINT N'Đã cập nhật số dư cho sinh viên ' + @StudentID;
+    UPDATE Student SET balance = ISNULL(balance, 0) + @AmountToAdd WHERE id = @StudentID;
+    SELECT @NewBalance = balance FROM Student WHERE id = @StudentID;
+    PRINT N'Đã cập nhật số dư cho sinh viên ' + @StudentID + N'. Số dư mới: ' + CAST(@NewBalance AS VARCHAR);
 END
 GO
 
@@ -255,7 +320,7 @@ BEGIN
     SET NOCOUNT ON;
     DECLARE @StudentBalance DECIMAL(12,2), @CourseTuition DECIMAL(12,2), @PaymentStatus NVARCHAR(20);
     DECLARE @CurrentPaymentDate DATE = GETDATE();
-    SELECT @StudentBalance = balance FROM Student WHERE id = @StudentID;
+    SELECT @StudentBalance = ISNULL(balance, 0) FROM Student WHERE id = @StudentID;
     SELECT @CourseTuition = tuition_fee FROM Course WHERE id = @CourseID;
 
     IF @StudentBalance IS NULL OR @CourseTuition IS NULL
@@ -281,14 +346,17 @@ BEGIN
 
     INSERT INTO Payment (id, payment_date, amount, status, student_id, course_id, payment_method, notes)
     VALUES (@PaymentID, @CurrentPaymentDate, @PaymentAmount, @PaymentStatus, @StudentID, @CourseID, @PaymentMethod, @TransactionNotes);
-
+    
     PRINT N'Thanh toán ' + @PaymentID + N' cho sinh viên ' + @StudentID + N' - Trạng thái: ' + @PaymentStatus;
 END
 GO
 
 -- ===================================================================
--- 6. TRIGGERS
+-- 7. TRIGGERS
 -- ===================================================================
+PRINT 'Creating triggers...';
+GO
+
 CREATE TRIGGER trg_UpdateCourseLastModified ON Course_Material
 AFTER UPDATE
 AS
@@ -299,7 +367,6 @@ BEGIN
 END
 GO
 
---Trigger to prevent deleting a student if they have a positive balance.
 CREATE TRIGGER trg_PreventStudentDeletionWithBalance ON Student
 INSTEAD OF DELETE
 AS
@@ -310,31 +377,66 @@ BEGIN
 
     IF @StudentBalance > 0
     BEGIN
-        -- Print a clear error message and simply do not perform the DELETE.
         PRINT N'Hành động bị hủy: Không thể xóa sinh viên ' + @StudentIDToDelete + N' vì họ vẫn còn số dư trong tài khoản.';
-        RETURN; -- Exit the trigger. The DELETE action is cancelled.
+        RETURN;
     END
     ELSE
     BEGIN
-        -- If balance is zero or less, proceed with the actual deletion.
         DELETE FROM Student WHERE id = @StudentIDToDelete;
     END
 END
 GO
 
--- Trigger for logging/auditing when a new student is added.
 CREATE TRIGGER trg_LogStudentCreation ON Student
 AFTER INSERT
 AS
 BEGIN
     SET NOCOUNT ON;
-    DECLARE @NewStudentID VARCHAR(5), @NewStudentName NVARCHAR(101);
-    SELECT @NewStudentID = id, @NewStudentName = last_name + N' ' + first_name FROM inserted;
-    PRINT N'AUDIT LOG: Sinh viên mới đã được tạo - ID: ' + @NewStudentID + N', Tên: ' + @NewStudentName;
+    INSERT INTO AuditLog (TableName, RecordID, ActionType, ChangeDetails)
+    SELECT 'Student', i.id, 'INSERT', 'A new student was created: ' + i.last_name + N' ' + i.first_name
+    FROM inserted i;
 END
 GO
 
--- Trigger to prevent a student from being enrolled in the same class twice.
+CREATE TRIGGER trg_LogStudentUpdate ON Student
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @details NVARCHAR(MAX) = N'';
+
+    IF UPDATE(email)
+        SELECT @details = @details + 'Email changed from "' + d.email + '" to "' + i.email + '". '
+        FROM inserted i JOIN deleted d ON i.id = d.id;
+
+    IF UPDATE(phone)
+        SELECT @details = @details + 'Phone changed from "' + ISNULL(d.phone, 'NULL') + '" to "' + ISNULL(i.phone, 'NULL') + '". '
+        FROM inserted i JOIN deleted d ON i.id = d.id;
+    
+    IF UPDATE(balance)
+        SELECT @details = @details + 'Balance changed from ' + CAST(ISNULL(d.balance, 0) AS VARCHAR) + ' to ' + CAST(ISNULL(i.balance, 0) AS VARCHAR) + '. '
+        FROM inserted i JOIN deleted d ON i.id = d.id;
+
+    IF @details <> ''
+    BEGIN
+        INSERT INTO AuditLog (TableName, RecordID, ActionType, ChangeDetails)
+        SELECT 'Student', id, 'UPDATE', @details
+        FROM inserted;
+    END
+END
+GO
+
+CREATE TRIGGER trg_LogStudentDeletion ON Student
+AFTER DELETE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO AuditLog (TableName, RecordID, ActionType, ChangeDetails)
+    SELECT 'Student', d.id, 'DELETE', 'Student record deleted. Name: ' + d.last_name + N' ' + d.first_name + N', Email: ' + d.email
+    FROM deleted d;
+END
+GO
+
 CREATE TRIGGER trg_PreventDuplicateEnrollment ON Class_Student
 INSTEAD OF INSERT
 AS
@@ -343,16 +445,13 @@ BEGIN
     DECLARE @student_id VARCHAR(5), @class_id NVARCHAR(20);
     SELECT @student_id = student_id, @class_id = class_id FROM inserted;
 
-    -- Check if the combination of student_id and class_id already exists in the main table.
     IF EXISTS (SELECT 1 FROM Class_Student WHERE student_id = @student_id AND class_id = @class_id)
     BEGIN
-        -- Print a clear error message and do not perform the INSERT.
         PRINT N'Hành động bị hủy: Sinh viên ' + @student_id + N' đã được ghi danh vào lớp ' + @class_id + N' rồi.';
-        RETURN; -- Exit the trigger. The INSERT action is cancelled.
+        RETURN;
     END
     ELSE
     BEGIN
-        -- If no duplicate is found, proceed with the actual insertion.
         INSERT INTO Class_Student (class_id, student_id, enrollment_date)
         SELECT class_id, student_id, enrollment_date FROM inserted;
         PRINT N'Ghi danh thành công: Sinh viên ' + @student_id + N' vào lớp ' + @class_id;
@@ -360,11 +459,9 @@ BEGIN
 END
 GO
 
--- ===================================================================
--- 7. DATA INSERTION
--- ===================================================================
+-- 8. DATA INSERTION
 PRINT 'Clearing existing data...';
-DELETE FROM Grade; DELETE FROM Payment; DELETE FROM Exam; DELETE FROM Class_Student; DELETE FROM Course_Material; DELETE FROM Class; DELETE FROM Course; DELETE FROM Student; DELETE FROM Teacher;
+DELETE FROM Grade; DELETE FROM Payment; DELETE FROM Exam; DELETE FROM Class_Student; DELETE FROM Course_Material; DELETE FROM Class; DELETE FROM Course; DELETE FROM AuditLog; DELETE FROM Student; DELETE FROM Teacher;
 GO
 
 PRINT 'Inserting sample data...';
@@ -502,57 +599,120 @@ INSERT INTO Exam (id, date, description, class_id, exam_type, duration_minutes) 
 ('EX015', '2024-01-20', N'Thi cuối kỳ IELTS Mock Test 3 (Lớp T7)', N'IELTS7S1S23', N'Final', 180);
 GO
 INSERT INTO Grade (id, value, student_id, exam_id, class_id, date) VALUES
-('GR001', 6.0, 'ST001', 'EX003', N'IELTS7S1S23', '2023-11-27'),
-('GR002', 7.0, 'ST001', 'EX011', N'GEB1E1S23', '2023-10-25'),
-('GR003', 7.5, 'ST002', 'EX001', N'GEA1M1S23', '2023-10-23'),
-('GR004', 8.8, 'ST002', 'EX005', N'BECOMW1S23', '2023-11-06'),
-('GR005', 8.0, 'ST004', 'EX003', N'IELTS7S1S23', '2023-11-27'),
-('GR006', 8.5, 'ST004', 'EX002', N'GEA1T1S23', '2023-10-24'),
-('GR007', 6.5, 'ST001', 'EX008', N'IELTS7S1S23', '2024-01-22'),
-('GR008', 9.0, 'ST002', 'EX006', N'GEA1M1S23', '2023-12-18'),
-('GR009', 7.5, 'ST007', 'EX009', N'TOEICAS1S23', '2023-12-02'),
-('GR010', 9.0, 'ST009', 'EX010', N'KIDSES1S23', '2023-11-17'),
-('GR011', 7.5, 'ST006', 'EX011', N'GEB1E1S23', '2023-10-25'),
-('GR012', 8.2, 'ST007', 'EX005', N'BECOMW1S23', '2023-11-06'),
-('GR013', 7.0, 'ST008', 'EX003', N'IELTS7S1S23', '2023-11-27'),
-('GR014', 8.0, 'ST008', 'EX001', N'GEA1M1S23', '2023-10-23'),
-('GR015', 8.5, 'ST014', 'EX005', N'BECOMW1S23', '2023-11-06'),
-('GR016', 7.5, 'ST013', 'EX008', N'IELTS7E1S23', '2024-01-22'),
-('GR017', 8.0, 'ST013', 'EX012', N'AWPROS1S23', '2023-11-01'),
-('GR018', 8.5, 'ST018', 'EX012', N'AWPROS1S23', '2023-11-01'),
-('GR019', 9.0, 'ST020', 'EX009', N'TOEICAS1S23', '2023-12-02'),
-('GR020', 7.5, 'ST022', 'EX008', N'IELTS7E1S23', '2024-01-22'),
-('GR021', 8.5, 'ST025', 'EX011', N'GEB1E1S23', '2023-10-25'),
-('GR022', 7.0, 'ST015', 'EX003', N'IELTS7S1S23', '2023-11-28'),
-('GR023', 9.5, 'ST024', 'EX003', N'IELTS7S1S23', '2023-11-28'),
-('GR024', 9.0, 'ST023', 'EX010', N'KIDSES1S23', '2023-11-17');
+('GR001', 6.00, 'ST001', 'EX003', N'IELTS7S1S23', '2023-11-27'),
+('GR002', 7.00, 'ST001', 'EX011', N'GEB1E1S23', '2023-10-25'),
+('GR003', 7.50, 'ST002', 'EX001', N'GEA1M1S23', '2023-10-23'),
+('GR004', 8.80, 'ST002', 'EX005', N'BECOMW1S23', '2023-11-06'),
+('GR005', 8.00, 'ST004', 'EX003', N'IELTS7S1S23', '2023-11-27'),
+('GR006', 8.50, 'ST004', 'EX002', N'GEA1T1S23', '2023-10-24'),
+('GR007', 6.50, 'ST001', 'EX008', N'IELTS7S1S23', '2024-01-22'),
+('GR008', 9.00, 'ST002', 'EX006', N'GEA1M1S23', '2023-12-18'),
+('GR009', 7.50, 'ST007', 'EX009', N'TOEICAS1S23', '2023-12-02'),
+('GR010', 9.00, 'ST009', 'EX010', N'KIDSES1S23', '2023-11-17'),
+('GR011', 7.50, 'ST006', 'EX011', N'GEB1E1S23', '2023-10-25'),
+('GR012', 8.20, 'ST007', 'EX005', N'BECOMW1S23', '2023-11-06'),
+('GR013', 7.00, 'ST008', 'EX003', N'IELTS7S1S23', '2023-11-27'),
+('GR014', 8.00, 'ST008', 'EX001', N'GEA1M1S23', '2023-10-23'),
+('GR015', 8.50, 'ST014', 'EX005', N'BECOMW1S23', '2023-11-06'),
+('GR016', 7.50, 'ST013', 'EX008', N'IELTS7E1S23', '2024-01-22'),
+('GR017', 8.00, 'ST013', 'EX012', N'AWPROS1S23', '2023-11-01'),
+('GR018', 8.50, 'ST018', 'EX012', N'AWPROS1S23', '2023-11-01'),
+('GR019', 9.00, 'ST020', 'EX009', N'TOEICAS1S23', '2023-12-02'),
+('GR020', 7.50, 'ST022', 'EX008', N'IELTS7E1S23', '2024-01-22'),
+('GR021', 8.50, 'ST025', 'EX011', N'GEB1E1S23', '2023-10-25'),
+('GR022', 7.00, 'ST015', 'EX003', N'IELTS7S1S23', '2023-11-28'),
+('GR023', 9.50, 'ST024', 'EX003', N'IELTS7S1S23', '2023-11-28'),
+('GR024', 9.00, 'ST023', 'EX010', N'KIDSES1S23', '2023-11-17');
 GO
 
 -- ===================================================================
--- 8. DATA PROCESSING
+-- 9. DATA PROCESSING
 -- ===================================================================
 PRINT 'Processing sample payments...';
-EXEC usp_ProcessCoursePayment @PaymentID = 'PA001', @StudentID = 'ST001', @CourseID = N'IELTS_70', @PaymentAmount = 7500000.00, @PaymentMethod = N'Chuyển khoản', @TransactionNotes = N'Học phí IELTS 7.0+';
-EXEC usp_ProcessCoursePayment @PaymentID = 'PA002', @StudentID = 'ST001', @CourseID = N'GE_B1', @PaymentAmount = 4000000.00, @PaymentMethod = N'Tiền mặt', @TransactionNotes = N'Học phí GE B1';
-EXEC usp_ProcessCoursePayment @PaymentID = 'PA003', @StudentID = 'ST004', @CourseID = N'IELTS_70', @PaymentAmount = 7500000.00, @PaymentMethod = N'Thẻ tín dụng', @TransactionNotes = N'Học phí IELTS 7.0+';
-EXEC usp_ProcessCoursePayment @PaymentID = 'PA004', @StudentID = 'ST002', @CourseID = N'GE_A1', @PaymentAmount = 3500000.00, @PaymentMethod = N'Chuyển khoản', @TransactionNotes = N'Học phí GE A1';
-EXEC usp_ProcessCoursePayment @PaymentID = 'PA005', @StudentID = 'ST003', @CourseID = N'BE_COM', @PaymentAmount = 4500000.00, @PaymentMethod = N'Momo', @TransactionNotes = N'Học phí Tiếng Anh TM';
-EXEC usp_ProcessCoursePayment @PaymentID = 'PA006', @StudentID = 'ST007', @CourseID = N'TOEIC_A', @PaymentAmount = 5500000.00, @PaymentMethod = N'Chuyển khoản', @TransactionNotes = N'Học phí TOEIC Nâng cao';
-EXEC usp_ProcessCoursePayment @PaymentID = 'PA007', @StudentID = 'ST009', @CourseID = N'KIDS_ENG', @PaymentAmount = 3000000.00, @PaymentMethod = N'Tiền mặt', @TransactionNotes = N'Học phí Tiếng Anh Trẻ Em';
-EXEC usp_ProcessCoursePayment @PaymentID = 'PA008', @StudentID = 'ST011', @CourseID = N'IELTS_55', @PaymentAmount = 6000000.00, @PaymentMethod = N'Thẻ tín dụng', @TransactionNotes = N'Học phí IELTS 5.5';
-EXEC usp_ProcessCoursePayment @PaymentID = 'PA009', @StudentID = 'ST013', @CourseID = N'AW_PRO', @PaymentAmount = 5000000.00, @PaymentMethod = N'Chuyển khoản', @TransactionNotes = N'Học phí Academic Writing';
-EXEC usp_ProcessCoursePayment @PaymentID = 'PA010', @StudentID = 'ST017', @CourseID = N'GE_B1', @PaymentAmount = 4000000.00, @PaymentMethod = N'Tiền mặt', @TransactionNotes = N'Học phí GE B1';
-EXEC usp_ProcessCoursePayment @PaymentID = 'PA011', @StudentID = 'ST018', @CourseID = N'AW_PRO', @PaymentAmount = 5000000.00, @PaymentMethod = N'Chuyển khoản', @TransactionNotes = N'Học phí Academic Writing';
-EXEC usp_ProcessCoursePayment @PaymentID = 'PA012', @StudentID = 'ST022', @CourseID = N'IELTS_70', @PaymentAmount = 7500000.00, @PaymentMethod = N'Thẻ tín dụng', @TransactionNotes = N'Học phí IELTS 7.0+';
-EXEC usp_ProcessCoursePayment @PaymentID = 'PA013', @StudentID = 'ST014', @CourseID = N'GE_B2', @PaymentAmount = 4200000.00, @PaymentMethod = N'Momo', @TransactionNotes = N'Học phí GE B2';
-EXEC usp_ProcessCoursePayment @PaymentID = 'PA014', @StudentID = 'ST025', @CourseID = N'GE_B1', @PaymentAmount = 4000000.00, @PaymentMethod = N'Tiền mặt', @TransactionNotes = N'Học phí GE B1';
-EXEC usp_ProcessCoursePayment @PaymentID = 'PA015', @StudentID = 'ST003', @CourseID = N'TOEIC_A', @PaymentAmount = 5500000.00, @PaymentMethod = N'Chuyển khoản', @TransactionNotes = N'Học phí TOEIC Nâng cao';
+EXEC usp_ProcessCoursePayment @PaymentID = 'PA001', @StudentID = 'ST001', @CourseID = N'IELTS_70', @PaymentAmount = 7500000.00, @PaymentMethod = N'Chuyển khoản';
+EXEC usp_ProcessCoursePayment @PaymentID = 'PA002', @StudentID = 'ST001', @CourseID = N'GE_B1', @PaymentAmount = 4000000.00, @PaymentMethod = N'Tiền mặt';
+EXEC usp_ProcessCoursePayment @PaymentID = 'PA003', @StudentID = 'ST004', @CourseID = N'IELTS_70', @PaymentAmount = 7500000.00, @PaymentMethod = N'Thẻ tín dụng';
+EXEC usp_ProcessCoursePayment @PaymentID = 'PA004', @StudentID = 'ST002', @CourseID = N'GE_A1', @PaymentAmount = 3500000.00, @PaymentMethod = N'Chuyển khoản';
+EXEC usp_ProcessCoursePayment @PaymentID = 'PA005', @StudentID = 'ST003', @CourseID = N'BE_COM', @PaymentAmount = 4500000.00, @PaymentMethod = N'Momo';
+EXEC usp_ProcessCoursePayment @PaymentID = 'PA006', @StudentID = 'ST007', @CourseID = N'TOEIC_A', @PaymentAmount = 5500000.00, @PaymentMethod = N'Chuyển khoản';
+EXEC usp_ProcessCoursePayment @PaymentID = 'PA007', @StudentID = 'ST009', @CourseID = N'KIDS_ENG', @PaymentAmount = 3000000.00, @PaymentMethod = N'Tiền mặt';
+EXEC usp_ProcessCoursePayment @PaymentID = 'PA008', @StudentID = 'ST011', @CourseID = N'IELTS_55', @PaymentAmount = 6000000.00, @PaymentMethod = N'Thẻ tín dụng';
+EXEC usp_ProcessCoursePayment @PaymentID = 'PA009', @StudentID = 'ST013', @CourseID = N'AW_PRO', @PaymentAmount = 5000000.00, @PaymentMethod = N'Chuyển khoản';
+EXEC usp_ProcessCoursePayment @PaymentID = 'PA010', @StudentID = 'ST017', @CourseID = N'GE_B1', @PaymentAmount = 4000000.00, @PaymentMethod = N'Tiền mặt';
+EXEC usp_ProcessCoursePayment @PaymentID = 'PA011', @StudentID = 'ST018', @CourseID = N'AW_PRO', @PaymentAmount = 5000000.00, @PaymentMethod = N'Chuyển khoản';
+EXEC usp_ProcessCoursePayment @PaymentID = 'PA012', @StudentID = 'ST022', @CourseID = N'IELTS_70', @PaymentAmount = 7500000.00, @PaymentMethod = N'Thẻ tín dụng';
+EXEC usp_ProcessCoursePayment @PaymentID = 'PA013', @StudentID = 'ST014', @CourseID = N'GE_B2', @PaymentAmount = 4200000.00, @PaymentMethod = N'Momo';
+EXEC usp_ProcessCoursePayment @PaymentID = 'PA014', @StudentID = 'ST025', @CourseID = N'GE_B1', @PaymentAmount = 4000000.00, @PaymentMethod = N'Tiền mặt';
+EXEC usp_ProcessCoursePayment @PaymentID = 'PA015', @StudentID = 'ST003', @CourseID = N'TOEIC_A', @PaymentAmount = 5500000.00, @PaymentMethod = N'Chuyển khoản';
 GO
 
 -- ===================================================================
--- 9. FINAL VERIFICATION
+-- 10. DEMONSTRATION OF COMPLEX QUERIES
 -- ===================================================================
-PRINT '--- Verifying Data Insertion ---';
+PRINT N'--- DEMONSTRATION QUERY 1: Tìm các trường hợp học viên đã thanh toán nhưng chưa được xếp lớp ---';
+SELECT
+    s.id AS StudentID,
+    dbo.fn_GetStudentFullName(s.id) AS StudentFullName,
+    p.course_id AS Unenrolled_Paid_Course
+FROM Payment p
+JOIN Student s ON p.student_id = s.id
+WHERE p.status = 'Success' AND NOT EXISTS (
+    SELECT 1 FROM Class_Student cs JOIN Class cl ON cs.class_id = cl.id
+    WHERE cs.student_id = p.student_id AND cl.course_id = p.course_id
+);
+GO
+
+PRINT N'--- DEMONSTRATION QUERY 2: Báo cáo hiệu suất học tập của học viên trong khóa học IELTS_70 ---';
+WITH StudentGradesInCourse AS (
+    SELECT cs.student_id, g.value
+    FROM Class_Student cs
+    JOIN Class cl ON cs.class_id = cl.id
+    JOIN Exam e ON cl.id = e.class_id
+    JOIN Grade g ON e.id = g.exam_id AND cs.student_id = g.student_id
+    WHERE cl.course_id = N'IELTS_70'
+)
+SELECT s.last_name + N' ' + s.first_name AS StudentFullName,
+       AVG(sg.value) AS AverageScore, MAX(sg.value) AS HighestScore, MIN(sg.value) AS LowestScore
+FROM StudentGradesInCourse sg
+JOIN Student s ON sg.student_id = s.id
+GROUP BY s.id, s.first_name, s.last_name
+ORDER BY AverageScore DESC;
+GO
+
+PRINT N'--- DEMONSTRATION QUERY 3: Tìm các Lớp học có cùng Giáo viên ---';
+SELECT
+    t.last_name + N' ' + t.first_name AS TeacherFullName,
+    c1.id AS ClassID_1,
+    c2.id AS ClassID_2
+FROM Class c1
+JOIN Class c2 ON c1.teacher_id = c2.teacher_id
+JOIN Teacher t ON c1.teacher_id = t.id
+WHERE c1.id < c2.id AND c1.teacher_id IS NOT NULL;
+GO
+
+PRINT N'--- DEMONSTRATION QUERY 4: Top 5 lớp học có điểm trung bình cao nhất và thấp nhất ---';
+WITH A AS (SELECT TOP 5
+    cl.id AS ClassID, co.description AS CourseDescription, t.last_name + N' ' + t.first_name AS TeacherFullName,
+    AVG(g.value) AS AverageGrade, N'Điểm cao nhất' AS RankType
+ FROM Grade g
+ JOIN Exam e ON g.exam_id = e.id JOIN Class cl ON e.class_id = cl.id
+ JOIN Course co ON cl.course_id = co.id LEFT JOIN Teacher t ON cl.teacher_id = t.id
+ GROUP BY cl.id, co.description, t.last_name, t.first_name ORDER BY AverageGrade DESC),
+B AS (SELECT TOP 5
+    cl.id AS ClassID, co.description AS CourseDescription, t.last_name + N' ' + t.first_name AS TeacherFullName,
+    AVG(g.value) AS AverageGrade, N'Điểm thấp nhất' AS RankType
+ FROM Grade g
+ JOIN Exam e ON g.exam_id = e.id JOIN Class cl ON e.class_id = cl.id
+ JOIN Course co ON cl.course_id = co.id LEFT JOIN Teacher t ON cl.teacher_id = t.id
+ GROUP BY cl.id, co.description, t.last_name, t.first_name
+ ORDER BY AverageGrade ASC)
+
+SELECT * FROM A UNION ALL SELECT * FROM B
+GO
+
+
+-- 11. FINAL VERIFICATION
+PRINT '--- Verifying All Data After Processing ---';
 PRINT '--- Teacher Data ---'; SELECT * FROM Teacher ORDER BY id;
 PRINT '--- Student Data ---'; SELECT * FROM Student ORDER BY id;
 PRINT '--- Course Data ---';  SELECT * FROM Course ORDER BY id;
@@ -561,6 +721,7 @@ PRINT '--- Class_Student Data ---'; SELECT * FROM Class_Student ORDER BY class_i
 PRINT '--- Exam Data ---'; SELECT * FROM Exam ORDER BY class_id, date;
 PRINT '--- Grade Data ---'; SELECT * FROM Grade ORDER BY student_id, exam_id;
 PRINT '--- Payment Data ---'; SELECT * FROM Payment ORDER BY student_id, payment_date;
+PRINT '--- Audit Log Data ---'; SELECT * FROM AuditLog ORDER BY LogID;
 GO
 
 PRINT '*** Script execution completed successfully. ***';
