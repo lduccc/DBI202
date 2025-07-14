@@ -1,7 +1,6 @@
 
 IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'EducateDB')
 BEGIN
-    PRINT 'Creating database EducateDB...';
     CREATE DATABASE EducateDB;
 END
 GO
@@ -9,7 +8,7 @@ GO
 USE EducateDB;
 GO
 
-PRINT 'Dropping existing objects...';
+---Drop if it exists
 IF OBJECT_ID('usp_GetStudentEnrollments', 'P') IS NOT NULL DROP PROCEDURE usp_GetStudentEnrollments;
 IF OBJECT_ID('usp_ProcessCoursePayment', 'P') IS NOT NULL DROP PROCEDURE usp_ProcessCoursePayment;
 IF OBJECT_ID('usp_UpdateStudentBalance', 'P') IS NOT NULL DROP PROCEDURE usp_UpdateStudentBalance;
@@ -36,10 +35,9 @@ IF OBJECT_ID('Course', 'U') IS NOT NULL DROP TABLE Course;
 IF OBJECT_ID('AuditLog', 'U') IS NOT NULL DROP TABLE AuditLog;
 IF OBJECT_ID('Student', 'U') IS NOT NULL DROP TABLE Student;
 IF OBJECT_ID('Teacher', 'U') IS NOT NULL DROP TABLE Teacher;
-GO
 
--- 3. TABLE CREATION
-PRINT 'Creating tables with robust constraints...';
+
+-- 3. Tables
 
 CREATE TABLE Teacher (
     id VARCHAR(5) PRIMARY KEY,
@@ -186,10 +184,7 @@ CREATE TABLE AuditLog (
 );
 GO
 
--- 4. VIEWS
-PRINT 'Creating views...';
-GO
-
+-- 4. Views
 CREATE VIEW V_Class_Details AS
 SELECT
     cl.id AS ClassID,
@@ -240,9 +235,7 @@ LEFT JOIN Class cl ON t.id = cl.teacher_id
 GROUP BY t.id, t.first_name, t.last_name;
 GO
 
--- 5. FUNCTIONS
-PRINT 'Creating functions...';
-GO
+-- 5. Functions
 
 CREATE FUNCTION dbo.fn_GetStudentFullName (@StudentID VARCHAR(5))
 RETURNS NVARCHAR(101)
@@ -261,7 +254,9 @@ RETURNS INT
 AS
 BEGIN
     RETURN DATEDIFF(YEAR, @DateOfBirth, GETDATE()) -
-           CASE WHEN (MONTH(@DateOfBirth) > MONTH(GETDATE())) OR (MONTH(@DateOfBirth) = MONTH(GETDATE()) AND DAY(@DateOfBirth) > DAY(GETDATE())) THEN 1 ELSE 0 END;
+           CASE WHEN (MONTH(@DateOfBirth) > MONTH(GETDATE())) OR
+		   (MONTH(@DateOfBirth) = MONTH(GETDATE()) AND
+		   DAY(@DateOfBirth) > DAY(GETDATE())) THEN 1 ELSE 0 END;
 END
 GO
 
@@ -280,14 +275,11 @@ RETURN
 );
 GO
 
--- 6. STORED PROCEDURES
-PRINT 'Creating stored procedures...';
-GO
+-- 6. Stored procedures
 
 CREATE PROCEDURE usp_GetStudentEnrollments @StudentID VARCHAR(5)
 AS
 BEGIN
-    SET NOCOUNT ON;
     SELECT ClassID, Schedule, CourseDescription, TeacherFullName
     FROM V_Class_Details
     WHERE ClassID IN (SELECT class_id FROM Class_Student WHERE student_id = @StudentID);
@@ -299,7 +291,6 @@ CREATE PROCEDURE usp_UpdateStudentBalance
     @AmountToAdd DECIMAL(12,2)
 AS
 BEGIN
-    SET NOCOUNT ON;
     DECLARE @NewBalance DECIMAL(12,2);
     IF NOT EXISTS (SELECT 1 FROM Student WHERE id = @StudentID)
     BEGIN
@@ -351,11 +342,7 @@ BEGIN
 END
 GO
 
--- ===================================================================
--- 7. TRIGGERS
--- ===================================================================
-PRINT 'Creating triggers...';
-GO
+-- 7. Triggers
 
 CREATE TRIGGER trg_UpdateCourseLastModified ON Course_Material
 AFTER UPDATE
@@ -364,26 +351,6 @@ BEGIN
     SET NOCOUNT ON;
     UPDATE Course SET last_modified = GETDATE()
     WHERE id IN (SELECT course_id FROM inserted);
-END
-GO
-
-CREATE TRIGGER trg_PreventStudentDeletionWithBalance ON Student
-INSTEAD OF DELETE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    DECLARE @StudentIDToDelete VARCHAR(5), @StudentBalance DECIMAL(12,2);
-    SELECT @StudentIDToDelete = id, @StudentBalance = balance FROM deleted;
-
-    IF @StudentBalance > 0
-    BEGIN
-        PRINT N'Hành động bị hủy: Không thể xóa sinh viên ' + @StudentIDToDelete + N' vì họ vẫn còn số dư trong tài khoản.';
-        RETURN;
-    END
-    ELSE
-    BEGIN
-        DELETE FROM Student WHERE id = @StudentIDToDelete;
-    END
 END
 GO
 
@@ -459,12 +426,20 @@ BEGIN
 END
 GO
 
--- 8. DATA INSERTION
-PRINT 'Clearing existing data...';
-DELETE FROM Grade; DELETE FROM Payment; DELETE FROM Exam; DELETE FROM Class_Student; DELETE FROM Course_Material; DELETE FROM Class; DELETE FROM Course; DELETE FROM AuditLog; DELETE FROM Student; DELETE FROM Teacher;
+-- 8. Data insertion
+---Clear data if exists
+DELETE FROM Grade
+DELETE FROM Payment
+DELETE FROM Exam; DELETE FROM Class_Student
+DELETE FROM Course_Material
+DELETE FROM Class
+DELETE FROM Course
+DELETE FROM AuditLog
+DELETE FROM Student
+DELETE FROM Teacher
+
 GO
 
-PRINT 'Inserting sample data...';
 INSERT INTO Teacher (id, first_name, last_name, date_birth, gender, email, phone, address, city, description, user_name, password) VALUES
 ('TE001', N'Mai', N'Nguyễn Thị Lan', '1985-03-12', N'Nữ', 'mai.ntl@educenter.vn', '0912345678', N'Số 10, Ngõ 25, Phố Vạn Bảo, Ba Đình', N'Hà Nội', N'Giáo viên IELTS (8.5), 10 năm kinh nghiệm', 'maintl', 'pass123'),
 ('TE002', N'David', N'Smith', '1978-07-20', N'Nam', 'david.smith@educenter.vn', '0987654321', N'P201, Tòa nhà A, Times City, Hai Bà Trưng', N'Hà Nội', N'Giáo viên bản ngữ (Mỹ), chuyên Phát âm & Giao tiếp', 'davids', 'pass123'),
@@ -625,10 +600,8 @@ INSERT INTO Grade (id, value, student_id, exam_id, class_id, date) VALUES
 ('GR024', 9.00, 'ST023', 'EX010', N'KIDSES1S23', '2023-11-17');
 GO
 
--- ===================================================================
--- 9. DATA PROCESSING
--- ===================================================================
-PRINT 'Processing sample payments...';
+-- 9. Sample payments exec
+
 EXEC usp_ProcessCoursePayment @PaymentID = 'PA001', @StudentID = 'ST001', @CourseID = N'IELTS_70', @PaymentAmount = 7500000.00, @PaymentMethod = N'Chuyển khoản';
 EXEC usp_ProcessCoursePayment @PaymentID = 'PA002', @StudentID = 'ST001', @CourseID = N'GE_B1', @PaymentAmount = 4000000.00, @PaymentMethod = N'Tiền mặt';
 EXEC usp_ProcessCoursePayment @PaymentID = 'PA003', @StudentID = 'ST004', @CourseID = N'IELTS_70', @PaymentAmount = 7500000.00, @PaymentMethod = N'Thẻ tín dụng';
@@ -646,10 +619,10 @@ EXEC usp_ProcessCoursePayment @PaymentID = 'PA014', @StudentID = 'ST025', @Cours
 EXEC usp_ProcessCoursePayment @PaymentID = 'PA015', @StudentID = 'ST003', @CourseID = N'TOEIC_A', @PaymentAmount = 5500000.00, @PaymentMethod = N'Chuyển khoản';
 GO
 
--- ===================================================================
--- 10. DEMONSTRATION OF COMPLEX QUERIES
--- ===================================================================
-PRINT N'--- DEMONSTRATION QUERY 1: Tìm các trường hợp học viên đã thanh toán nhưng chưa được xếp lớp ---';
+ 
+-- 10. Queries
+
+--  Tìm các trường hợp học viên đã thanh toán nhưng chưa được xếp lớp 
 SELECT
     s.id AS StudentID,
     dbo.fn_GetStudentFullName(s.id) AS StudentFullName,
@@ -662,15 +635,14 @@ WHERE p.status = 'Success' AND NOT EXISTS (
 );
 GO
 
-PRINT N'--- DEMONSTRATION QUERY 2: Báo cáo hiệu suất học tập của học viên trong khóa học IELTS_70 ---';
+--Báo cáo hiệu suất học tập của học viên trong khóa học IELTS_70 
 WITH StudentGradesInCourse AS (
     SELECT cs.student_id, g.value
     FROM Class_Student cs
     JOIN Class cl ON cs.class_id = cl.id
     JOIN Exam e ON cl.id = e.class_id
     JOIN Grade g ON e.id = g.exam_id AND cs.student_id = g.student_id
-    WHERE cl.course_id = N'IELTS_70'
-)
+    WHERE cl.course_id = N'IELTS_70')
 SELECT s.last_name + N' ' + s.first_name AS StudentFullName,
        AVG(sg.value) AS AverageScore, MAX(sg.value) AS HighestScore, MIN(sg.value) AS LowestScore
 FROM StudentGradesInCourse sg
@@ -679,7 +651,7 @@ GROUP BY s.id, s.first_name, s.last_name
 ORDER BY AverageScore DESC;
 GO
 
-PRINT N'--- DEMONSTRATION QUERY 3: Tìm các Lớp học có cùng Giáo viên ---';
+-- Tìm các Lớp học có cùng Giáo viên
 SELECT
     t.last_name + N' ' + t.first_name AS TeacherFullName,
     c1.id AS ClassID_1,
@@ -690,39 +662,30 @@ JOIN Teacher t ON c1.teacher_id = t.id
 WHERE c1.id < c2.id AND c1.teacher_id IS NOT NULL;
 GO
 
-PRINT N'--- DEMONSTRATION QUERY 4: Top 5 lớp học có điểm trung bình cao nhất và thấp nhất ---';
-WITH A AS (SELECT TOP 5
-    cl.id AS ClassID, co.description AS CourseDescription, t.last_name + N' ' + t.first_name AS TeacherFullName,
-    AVG(g.value) AS AverageGrade, N'Điểm cao nhất' AS RankType
+-- Top 2 lớp học có điểm trung bình cao nhất và thấp nhất 
+
+WITH Average AS (SELECT 
+	cl.id AS ClassID, co.description AS CourseDescription, t.last_name + N' ' + t.first_name AS TeacherFullName,
+    AVG(g.value) AS AverageGrade
  FROM Grade g
  JOIN Exam e ON g.exam_id = e.id JOIN Class cl ON e.class_id = cl.id
  JOIN Course co ON cl.course_id = co.id LEFT JOIN Teacher t ON cl.teacher_id = t.id
- GROUP BY cl.id, co.description, t.last_name, t.first_name ORDER BY AverageGrade DESC),
-B AS (SELECT TOP 5
-    cl.id AS ClassID, co.description AS CourseDescription, t.last_name + N' ' + t.first_name AS TeacherFullName,
-    AVG(g.value) AS AverageGrade, N'Điểm thấp nhất' AS RankType
- FROM Grade g
- JOIN Exam e ON g.exam_id = e.id JOIN Class cl ON e.class_id = cl.id
- JOIN Course co ON cl.course_id = co.id LEFT JOIN Teacher t ON cl.teacher_id = t.id
- GROUP BY cl.id, co.description, t.last_name, t.first_name
- ORDER BY AverageGrade ASC)
+ GROUP BY cl.id, co.description, t.last_name, t.first_name)
+, A AS (SELECT TOP 2 * FROM Average ORDER BY AverageGrade DESC)
+, B AS (SELECT TOP 2 * FROM Average ORDER BY AverageGrade)
 
-SELECT * FROM A UNION ALL SELECT * FROM B
+SELECT * FROM A UNION ALL SELECT * FROM B ORDER BY AverageGrade
+
+-- Testing
+
+SELECT * FROM Teacher ORDER BY id
+SELECT * FROM Student ORDER BY id
+SELECT * FROM Course ORDER BY id
+SELECT * FROM Class ORDER BY course_id, id
+SELECT * FROM Class_Student ORDER BY class_id, student_id
+SELECT * FROM Exam ORDER BY class_id, date
+SELECT * FROM Grade ORDER BY student_id, exam_id
+SELECT * FROM Payment ORDER BY student_id, payment_date
+SELECT * FROM AuditLog ORDER BY LogID
 GO
 
-
--- 11. FINAL VERIFICATION
-PRINT '--- Verifying All Data After Processing ---';
-PRINT '--- Teacher Data ---'; SELECT * FROM Teacher ORDER BY id;
-PRINT '--- Student Data ---'; SELECT * FROM Student ORDER BY id;
-PRINT '--- Course Data ---';  SELECT * FROM Course ORDER BY id;
-PRINT '--- Class Data ---'; SELECT * FROM Class ORDER BY course_id, id;
-PRINT '--- Class_Student Data ---'; SELECT * FROM Class_Student ORDER BY class_id, student_id;
-PRINT '--- Exam Data ---'; SELECT * FROM Exam ORDER BY class_id, date;
-PRINT '--- Grade Data ---'; SELECT * FROM Grade ORDER BY student_id, exam_id;
-PRINT '--- Payment Data ---'; SELECT * FROM Payment ORDER BY student_id, payment_date;
-PRINT '--- Audit Log Data ---'; SELECT * FROM AuditLog ORDER BY LogID;
-GO
-
-PRINT '*** Script execution completed successfully. ***';
-GO
