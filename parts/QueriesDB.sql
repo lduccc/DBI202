@@ -3,7 +3,7 @@ USE EducateDB
 GO
 
 
--- DEMONSTRATION QUERY 1: Tìm các trường hợp học viên đã thanh toán nhưng chưa được xếp lớp 
+-- Tìm các trường hợp học viên đã thanh toán nhưng chưa được xếp lớp 
 SELECT
     s.id AS StudentID,
     dbo.fn_GetStudentFullName(s.id) AS StudentFullName,
@@ -16,7 +16,7 @@ WHERE p.status = 'Success' AND NOT EXISTS (
 );
 GO
 
--- DEMONSTRATION QUERY 2: Báo cáo hiệu suất học tập của học viên trong khóa học IELTS_70 
+-- Báo cáo hiệu suất học tập của học viên trong khóa học IELTS_70 
 WITH StudentGradesInCourse AS (
     SELECT cs.student_id, g.value
     FROM Class_Student cs
