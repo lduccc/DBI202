@@ -4,15 +4,14 @@ GO
 ---Clear data if exists
 DELETE FROM Grade
 DELETE FROM Payment
-DELETE FROM Exam
 DELETE FROM Class_Student
+DELETE FROM Exam
 DELETE FROM Course_Material
 DELETE FROM Class
 DELETE FROM Course
 DELETE FROM AuditLog
 DELETE FROM Student
 DELETE FROM Teacher
-
 GO
 
 INSERT INTO Teacher (id, first_name, last_name, date_birth, gender, email, phone, address, city, description, user_name, password) VALUES
