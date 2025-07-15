@@ -1,4 +1,4 @@
-﻿--Setup DB
+--Setup DB
 
 IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'EducateDB')
 BEGIN
@@ -10,22 +10,6 @@ USE EducateDB;
 GO
 
 ---Drop if it exists
-IF OBJECT_ID('usp_GetStudentEnrollments', 'P') IS NOT NULL DROP PROCEDURE usp_GetStudentEnrollments;
-IF OBJECT_ID('usp_ProcessCoursePayment', 'P') IS NOT NULL DROP PROCEDURE usp_ProcessCoursePayment;
-IF OBJECT_ID('usp_UpdateStudentBalance', 'P') IS NOT NULL DROP PROCEDURE usp_UpdateStudentBalance;
-IF OBJECT_ID('dbo.fn_GetStudentFullName', 'FN') IS NOT NULL DROP FUNCTION dbo.fn_GetStudentFullName;
-IF OBJECT_ID('dbo.fn_CalculateStudentAge', 'FN') IS NOT NULL DROP FUNCTION dbo.fn_CalculateStudentAge;
-IF OBJECT_ID('dbo.fn_GetClassesByTeacher', 'IF') IS NOT NULL DROP FUNCTION dbo.fn_GetClassesByTeacher;
-IF OBJECT_ID('V_Class_Details', 'V') IS NOT NULL DROP VIEW V_Class_Details;
-IF OBJECT_ID('V_Student_Grades', 'V') IS NOT NULL DROP VIEW V_Student_Grades;
-IF OBJECT_ID('V_Course_Summary', 'V') IS NOT NULL DROP VIEW V_Course_Summary;
-IF OBJECT_ID('V_Teacher_Workload', 'V') IS NOT NULL DROP VIEW V_Teacher_Workload;
-IF OBJECT_ID('trg_UpdateCourseLastModified', 'TR') IS NOT NULL DROP TRIGGER trg_UpdateCourseLastModified;
-IF OBJECT_ID('trg_PreventStudentDeletionWithBalance', 'TR') IS NOT NULL DROP TRIGGER trg_PreventStudentDeletionWithBalance;
-IF OBJECT_ID('trg_LogStudentCreation', 'TR') IS NOT NULL DROP TRIGGER trg_LogStudentCreation;
-IF OBJECT_ID('trg_LogStudentUpdate', 'TR') IS NOT NULL DROP TRIGGER trg_LogStudentUpdate;
-IF OBJECT_ID('trg_LogStudentDeletion', 'TR') IS NOT NULL DROP TRIGGER trg_LogStudentDeletion;
-IF OBJECT_ID('trg_PreventDuplicateEnrollment', 'TR') IS NOT NULL DROP TRIGGER trg_PreventDuplicateEnrollment;
 IF OBJECT_ID('Grade', 'U') IS NOT NULL DROP TABLE Grade;
 IF OBJECT_ID('Payment', 'U') IS NOT NULL DROP TABLE Payment;
 IF OBJECT_ID('Exam', 'U') IS NOT NULL DROP TABLE Exam;
