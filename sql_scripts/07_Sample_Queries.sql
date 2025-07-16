@@ -56,8 +56,8 @@ WITH Average AS (
     JOIN Course co ON cl.course_id = co.id 
     LEFT JOIN Teacher t ON cl.teacher_id = t.id
     GROUP BY cl.id, co.description, t.last_name, t.first_name
-), Highest AS ( SELECT TOP 2 * FROM Average ORDER BY AverageGrade DESC)
-,Lowest AS (SELECT TOP 2 * FROM Average ORDER BY AverageGrade ASC)
+), Highest AS ( SELECT TOP 2 WITH TIES * FROM Average ORDER BY AverageGrade DESC)
+,Lowest AS (SELECT TOP 2 WITH TIES * FROM Average ORDER BY AverageGrade ASC)
 
 SELECT * FROM Highest UNION ALL SELECT * FROM Lowest ORDER BY AverageGrade
 GO
