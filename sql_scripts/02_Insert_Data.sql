@@ -688,11 +688,11 @@ GO
 SELECT * FROM Teacher ORDER BY id;
 SELECT * FROM Student ORDER BY id;
 SELECT * FROM Course ORDER BY id;
+SELECT * FROM Course_Material ORDER BY id;
 SELECT * FROM Class ORDER BY course_id, id;
 SELECT * FROM Class_Student ORDER BY class_id, student_id;
 SELECT * FROM Exam ORDER BY class_id, date;
 SELECT * FROM Exam_Result ORDER BY student_id, exam_id;
 SELECT * FROM Payment ORDER BY id;
-SELECT * FROM AuditLog ORDER BY LogID;
 GO
 */
