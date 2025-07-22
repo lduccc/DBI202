@@ -28,6 +28,7 @@ IF OBJECT_ID('usp_GetStudentsByCourseAndBalance', 'P') IS NOT NULL DROP PROCEDUR
 IF OBJECT_ID('usp_GetCoursePaymentSummary', 'P') IS NOT NULL DROP PROCEDURE usp_GetCoursePaymentSummary;
 IF OBJECT_ID('usp_TransferStudentBalance', 'P') IS NOT NULL DROP PROCEDURE usp_TransferStudentBalance;
 IF OBJECT_ID('usp_GetStudentsWithHighestTotalPayment', 'P') IS NOT NULL DROP PROCEDURE usp_GetStudentsWithHighestTotalPayment;
+IF OBJECT_ID('usp_VerifyUserLogin', 'P') IS NOT NULL DROP PROCEDURE usp_VerifyUserLogin;
 IF OBJECT_ID('dbo.fn_GetStudentFullName', 'FN') IS NOT NULL DROP FUNCTION dbo.fn_GetStudentFullName;
 IF OBJECT_ID('dbo.fn_CalculateStudentAge', 'FN') IS NOT NULL DROP FUNCTION dbo.fn_CalculateStudentAge;
 IF OBJECT_ID('dbo.fn_GetClassesByTeacher', 'IF') IS NOT NULL  DROP FUNCTION dbo.fn_GetClassesByTeacher;
@@ -49,6 +50,9 @@ IF OBJECT_ID('trg_LogStudentUpdate', 'TR') IS NOT NULL DROP TRIGGER trg_LogStude
 IF OBJECT_ID('trg_LogStudentDeletion', 'TR') IS NOT NULL  DROP TRIGGER trg_LogStudentDeletion;
 IF OBJECT_ID('trg_SetInitialStudentBalance', 'TR') IS NOT NULL DROP TRIGGER trg_SetInitialStudentBalance;
 IF OBJECT_ID('trg_DeleteExamsOnClassDelete', 'TR') IS NOT NULL DROP TRIGGER trg_DeleteExamsOnClassDelete;
+IF OBJECT_ID('trg_HashTeacherPassword', 'TR') IS NOT NULL DROP TRIGGER trg_HashTeacherPassword;
+IF OBJECT_ID('trg_HashStudentPassword', 'TR') IS NOT NULL DROP TRIGGER trg_HashStudentPassword;
+
 GO
 
 IF OBJECT_ID('Exam_Result', 'U') IS NOT NULL DROP TABLE Exam_Result;
@@ -65,46 +69,45 @@ GO
 
 
 -- 3. Tables
+
 CREATE TABLE Teacher (
     id VARCHAR(5) PRIMARY KEY,
     first_name NVARCHAR(50) NOT NULL,
     last_name NVARCHAR(50) NOT NULL,
-    date_birth DATE,
-    gender NVARCHAR(3),
-    email VARCHAR(100) UNIQUE NOT NULL,
-    phone VARCHAR(20),
-    address NVARCHAR(255),
-    city NVARCHAR(50),
-    description NVARCHAR(255),
     user_name VARCHAR(50) UNIQUE NOT NULL,
-    password VARCHAR(255) NOT NULL,
+    password NVARCHAR(128) NOT NULL, -- Will store the HASH as a string
+    date_birth DATE, 
+	gender NVARCHAR(3),
+	email VARCHAR(100) UNIQUE NOT NULL, 
+	phone VARCHAR(20), 
+	address NVARCHAR(255),
+	city NVARCHAR(50), 
+	description NVARCHAR(255),
 	CONSTRAINT CK_Teacher_ID CHECK (id LIKE 'TE[0-9][0-9][0-9]'),
     CONSTRAINT CK_Teacher_Gender CHECK (gender IN (N'Nam', N'Nữ')),
     CONSTRAINT CK_Teacher_Email CHECK (email LIKE '%_@__%.__%')
-
-);
+)
 GO
 
 CREATE TABLE Student (
     id VARCHAR(5) PRIMARY KEY,
     first_name NVARCHAR(50) NOT NULL,
     last_name NVARCHAR(50) NOT NULL,
-    date_birth DATE,
-    gender NVARCHAR(3),
-    email VARCHAR(100) UNIQUE NOT NULL,
-    phone VARCHAR(20),
-    address NVARCHAR(255),
-    city NVARCHAR(50),
     user_name VARCHAR(50) UNIQUE NOT NULL,
-    password VARCHAR(255) NOT NULL,
-    balance DECIMAL(12,2),
-    created_date DATE,
+    password NVARCHAR(128) NOT NULL, -- Will store the HASH as a string
+    date_birth DATE,
+	gender NVARCHAR(3),
+	email VARCHAR(100) UNIQUE NOT NULL, 
+	phone VARCHAR(20), 
+	address NVARCHAR(255), 
+	city NVARCHAR(50), 
+	balance DECIMAL(12,2),
+	created_date DATE,
 	CONSTRAINT CK_Student_ID CHECK (id LIKE 'ST[0-9][0-9][0-9]'),
     CONSTRAINT CK_Student_Gender CHECK (gender IN (N'Nam', N'Nữ')),
     CONSTRAINT CK_Student_Email CHECK (email LIKE '%_@__%.__%'),
-    CONSTRAINT CK_Student_Balance CHECK (balance >= 0)
+    CONSTRAINT CK_Student_Balance CHECK (balance >= 0))
 
-);
 GO
 
 CREATE TABLE Course (
@@ -400,6 +403,37 @@ AS BEGIN
 END
 GO
 -- 6. Stored procedures
+
+CREATE OR ALTER PROCEDURE usp_VerifyUserLogin
+    @Username VARCHAR(50),
+    @PasswordAttempt NVARCHAR(255)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @StoredHash NVARCHAR(128)
+    DECLARE @UserType NVARCHAR(10)
+    DECLARE @UserID VARCHAR(5)
+
+    SELECT @StoredHash = password, @UserID = id, @UserType = 'Student' FROM Student WHERE user_name = @Username
+    
+    IF @UserID IS NULL
+    BEGIN
+        SELECT @StoredHash = password, @UserID = id, @UserType = 'Teacher' FROM Teacher WHERE user_name = @Username
+    END
+
+    IF @StoredHash IS NOT NULL
+    BEGIN
+        IF CONVERT(NVARCHAR(128), HASHBYTES('SHA2_512', @PasswordAttempt + @Username), 2) = @StoredHash
+        BEGIN
+            SELECT 'Login Successful' AS Status, @UserID AS UserID, @UserType AS UserType
+            RETURN
+        END
+    END
+
+    SELECT 'Invalid Username or Password' AS Status, NULL AS UserID, NULL AS UserType
+END
+GO
+
 CREATE PROCEDURE usp_GetStudentEnrollments @StudentID VARCHAR(5)
 AS
 BEGIN
@@ -596,6 +630,36 @@ END
 GO
 
 -- 7. Triggers
+
+CREATE TRIGGER trg_HashStudentPassword
+ON Student
+INSTEAD OF INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO Student (id, first_name, last_name, user_name, password, date_birth, gender, email, phone, address, city, balance, created_date)
+    SELECT
+        i.id, i.first_name, i.last_name, i.user_name,
+        CONVERT(NVARCHAR(128), HASHBYTES('SHA2_512', i.password + i.user_name), 2),
+        i.date_birth, i.gender, i.email, i.phone, i.address, i.city, i.balance, i.created_date
+    FROM inserted i;
+END
+GO
+
+CREATE TRIGGER trg_HashTeacherPassword
+ON Teacher
+INSTEAD OF INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO Teacher (id, first_name, last_name, user_name, password, date_birth, gender, email, phone, address, city, description)
+    SELECT
+        i.id, i.first_name, i.last_name, i.user_name,
+        CONVERT(NVARCHAR(128), HASHBYTES('SHA2_512', i.password + i.user_name), 2),
+        i.date_birth, i.gender, i.email, i.phone, i.address, i.city, i.description
+    FROM inserted i;
+END
+GO
 
 CREATE TRIGGER trg_UpdateCourseLastModified 
 ON Course_Material
