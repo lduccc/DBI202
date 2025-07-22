@@ -167,3 +167,5 @@ GO
 -- SELECT dbo.fn_IsStudentEnrolledCourse('ST001', 'SAT_PREP') AS IsEnrolled
 -- -- Student ST001 is NOT enrolled in GMAT_PREP
 -- SELECT dbo.fn_IsStudentEnrolledCourse('ST001', 'GMAT_PREP') AS IsEnrolled
+
+
