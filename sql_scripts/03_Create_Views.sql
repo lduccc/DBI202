@@ -9,7 +9,31 @@ IF OBJECT_ID('V_Teacher_Workload', 'V') IS NOT NULL DROP VIEW V_Teacher_Workload
 IF OBJECT_ID('V_StudentClassStats', 'V') IS NOT NULL DROP VIEW V_StudentClassStats
 IF OBJECT_ID('V_Student_Enrollments', 'V') IS NOT NULL DROP VIEW V_Student_Enrollments
 IF OBJECT_ID('V_Payment_History', 'V') IS NOT NULL DROP VIEW V_Payment_History
+IF OBJECT_ID('V_StudentContactInfo', 'V') IS NOT NULL DROP VIEW V_StudentContactInfo
+IF OBJECT_ID('V_LatestExamResults', 'V') IS NOT NULL DROP VIEW  V_LatestExamResults
+
 GO
+
+
+
+CREATE VIEW V_StudentContactInfo
+AS
+SELECT
+    id AS StudentID,
+    last_name + ' ' + first_name AS FullName,
+    date_birth AS DateOfBirth,
+    gender AS Gender,
+    email AS EmailAddress,
+    phone AS PhoneNumber,
+    address AS HomeAddress,
+    city AS City
+FROM
+    Student;
+GO
+
+--SELECT * FROM V_StudentContactInfo;
+-- SELECT * FROM V_StudentContactInfo WHERE FullName LIKE N'Nguyễn%';
+
 
 -- Provides a detailed overview of each class, including course name, schedule, teacher, and its specific tuition fee.
 CREATE VIEW V_Class_Details AS
@@ -128,3 +152,27 @@ GO
 
 --Testcase:
 --SELECT * FROM V_Payment_History
+
+CREATE VIEW V_LatestExamResults
+AS
+SELECT
+    S.id AS StudentID,
+    S.first_name + ' ' + S.last_name AS StudentName,
+    E.id AS ExamID,
+    E.exam_type AS ExamType,
+    E.description AS ExamDescription,
+    ER.value AS Score,
+    ER.date AS ResultDate,
+    C.id AS ClassID,
+    Co.description AS CourseName
+
+FROM Exam_Result AS ER
+JOIN Student AS S ON ER.student_id = S.id
+JOIN Exam AS E ON ER.exam_id = E.id
+JOIN Class AS C ON E.class_id = C.id
+JOIN Course AS Co ON C.course_id = Co.id;
+GO
+
+--SELECT * FROM V_LatestExamResults;
+-- SELECT * FROM V_LatestExamResults WHERE ExamID = 'EX001';
+
