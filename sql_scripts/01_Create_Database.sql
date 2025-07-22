@@ -22,20 +22,21 @@ GO
 
 
 -- TABLE CREATION
+
 CREATE TABLE Teacher (
     id VARCHAR(5) PRIMARY KEY,
     first_name NVARCHAR(50) NOT NULL,
     last_name NVARCHAR(50) NOT NULL,
-    date_birth DATE,
-    gender NVARCHAR(3),
-    email VARCHAR(100) UNIQUE NOT NULL,
-    phone VARCHAR(20),
-    address NVARCHAR(255),
-    city NVARCHAR(50),
-    description NVARCHAR(255),
     user_name VARCHAR(50) UNIQUE NOT NULL,
-    password VARCHAR(255) NOT NULL,
-    CONSTRAINT CK_Teacher_ID CHECK (id LIKE 'TE[0-9][0-9][0-9]'),
+    password NVARCHAR(128) NOT NULL, -- Will store the HASH as a string
+    date_birth DATE, 
+	gender NVARCHAR(3),
+	email VARCHAR(100) UNIQUE NOT NULL, 
+	phone VARCHAR(20), 
+	address NVARCHAR(255),
+	city NVARCHAR(50), 
+	description NVARCHAR(255),
+	CONSTRAINT CK_Teacher_ID CHECK (id LIKE 'TE[0-9][0-9][0-9]'),
     CONSTRAINT CK_Teacher_Gender CHECK (gender IN (N'Nam', N'Nữ')),
     CONSTRAINT CK_Teacher_Email CHECK (email LIKE '%_@__%.__%')
 )
@@ -45,22 +46,21 @@ CREATE TABLE Student (
     id VARCHAR(5) PRIMARY KEY,
     first_name NVARCHAR(50) NOT NULL,
     last_name NVARCHAR(50) NOT NULL,
-    date_birth DATE,
-    gender NVARCHAR(3),
-    email VARCHAR(100) UNIQUE NOT NULL,
-    phone VARCHAR(20),
-    address NVARCHAR(255),
-    city NVARCHAR(50),
     user_name VARCHAR(50) UNIQUE NOT NULL,
-    password VARCHAR(255) NOT NULL,
-    balance DECIMAL(12,2),
-    created_date DATE,
-    CONSTRAINT CK_Student_ID CHECK (id LIKE 'ST[0-9][0-9][0-9]'),
+    password NVARCHAR(128) NOT NULL, -- Will store the HASH as a string
+    date_birth DATE,
+	gender NVARCHAR(3),
+	email VARCHAR(100) UNIQUE NOT NULL, 
+	phone VARCHAR(20), 
+	address NVARCHAR(255), 
+	city NVARCHAR(50), 
+	balance DECIMAL(12,2),
+	created_date DATE,
+	CONSTRAINT CK_Student_ID CHECK (id LIKE 'ST[0-9][0-9][0-9]'),
     CONSTRAINT CK_Student_Gender CHECK (gender IN (N'Nam', N'Nữ')),
     CONSTRAINT CK_Student_Email CHECK (email LIKE '%_@__%.__%'),
-    CONSTRAINT CK_Student_Balance CHECK (balance >= 0)
-)
-GO
+    CONSTRAINT CK_Student_Balance CHECK (balance >= 0))
+
 
 CREATE TABLE Course (
     id NVARCHAR(50) PRIMARY KEY,
