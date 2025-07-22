@@ -7,7 +7,8 @@ IF OBJECT_ID('trg_LogStudentUpdate', 'TR') IS NOT NULL DROP TRIGGER trg_LogStude
 IF OBJECT_ID('trg_LogStudentDeletion', 'TR') IS NOT NULL DROP TRIGGER trg_LogStudentDeletion
 IF OBJECT_ID('trg_SetInitialStudentBalance', 'TR') IS NOT NULL DROP TRIGGER trg_SetInitialStudentBalance
 IF OBJECT_ID('trg_DeleteExamsOnClassDelete', 'TR') IS NOT NULL DROP TRIGGER trg_DeleteExamsOnClassDelete
-GO
+IF OBJECT_ID('trg_HashStudentPassword', 'TR') IS NOT NULL DROP TRIGGER trg_HashStudentPassword
+IF OBJECT_ID('trg_HashTeacherPassword', 'TR') IS NOT NULL DROP TRIGGER trg_HashTeacherPassword
 
 IF OBJECT_ID('AuditLog', 'U') IS NOT NULL DROP TABLE AuditLog
 GO
@@ -21,6 +22,62 @@ CREATE TABLE AuditLog (
     ChangedAt DATETIME2 DEFAULT GETDATE()
 )
 GO
+
+
+-- Trigger to intercept inserts, hash the password, and store it in the same column
+CREATE TRIGGER trg_HashStudentPassword
+ON Student
+INSTEAD OF INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO Student (id, first_name, last_name, user_name, password, date_birth, gender, email, phone, address, city, balance, created_date)
+    SELECT
+        i.id, i.first_name, i.last_name, i.user_name,
+        CONVERT(NVARCHAR(128), HASHBYTES('SHA2_512', i.password + i.user_name), 2),
+        i.date_birth, i.gender, i.email, i.phone, i.address, i.city, i.balance, i.created_date
+    FROM inserted i;
+END
+GO
+
+/*
+BEGIN TRANSACTION
+
+INSERT INTO Student (id, first_name, last_name, email, user_name, password, balance, created_date) VALUES
+('ST998', 'Multi', 'One', 'multi1@test.com', 'multitest1', 'samePassword', 2000.00, GETDATE()),
+('ST997', 'Multi', 'Two', 'multi2@test.com', 'multitest2', 'samePassword', 3000.00, GETDATE())
+
+SELECT id, user_name, password FROM Student WHERE id IN ('ST998', 'ST997')
+GO
+
+ROLLBACK TRANSACTION
+*/
+
+CREATE TRIGGER trg_HashTeacherPassword
+ON Teacher
+INSTEAD OF INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO Teacher (id, first_name, last_name, user_name, password, date_birth, gender, email, phone, address, city, description)
+    SELECT
+        i.id, i.first_name, i.last_name, i.user_name,
+        CONVERT(NVARCHAR(128), HASHBYTES('SHA2_512', i.password + i.user_name), 2),
+        i.date_birth, i.gender, i.email, i.phone, i.address, i.city, i.description
+    FROM inserted i;
+END
+GO
+/*
+BEGIN TRANSACTION
+
+INSERT INTO Teacher (id, first_name, last_name, email, user_name, password, description)
+VALUES ('TE999', 'Teacher', 'Test', 'teacher@test.com', 'teachertest', 'teacherPass!', 'Test description')
+
+SELECT id, user_name, password FROM Teacher WHERE id = 'TE999'
+GO
+
+ROLLBACK TRANSACTION
+*/
 
 -- Updates the 'last_modified' timestamp on a Course when its material is updated.
 CREATE TRIGGER trg_UpdateCourseLastModified 
