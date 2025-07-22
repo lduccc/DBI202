@@ -9,8 +9,51 @@ IF OBJECT_ID('usp_GetStudentsByCourseAndBalance', 'P') IS NOT NULL DROP PROCEDUR
 IF OBJECT_ID('usp_GetCoursePaymentSummary', 'P') IS NOT NULL DROP PROCEDURE usp_GetCoursePaymentSummary
 IF OBJECT_ID('usp_TransferStudentBalance', 'P') IS NOT NULL DROP PROCEDURE usp_TransferStudentBalance
 IF OBJECT_ID('usp_GetStudentsWithHighestTotalPayment', 'P') IS NOT NULL DROP PROCEDURE usp_GetStudentsWithHighestTotalPayment
+IF OBJECT_ID('usp_VerifyUserLogin', 'P') IS NOT NULL DROP PROCEDURE usp_VerifyUserLogin
+
 GO
 
+--Authenticate user login and password
+CREATE OR ALTER PROCEDURE usp_VerifyUserLogin
+    @Username VARCHAR(50),
+    @PasswordAttempt NVARCHAR(255)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @StoredHash NVARCHAR(128)
+    DECLARE @UserType NVARCHAR(10)
+    DECLARE @UserID VARCHAR(5)
+
+    SELECT @StoredHash = password, @UserID = id, @UserType = 'Student' FROM Student WHERE user_name = @Username
+    
+    IF @UserID IS NULL
+    BEGIN
+        SELECT @StoredHash = password, @UserID = id, @UserType = 'Teacher' FROM Teacher WHERE user_name = @Username
+    END
+
+    IF @StoredHash IS NOT NULL
+    BEGIN
+        IF CONVERT(NVARCHAR(128), HASHBYTES('SHA2_512', @PasswordAttempt + @Username), 2) = @StoredHash
+        BEGIN
+            SELECT 'Login Successful' AS Status, @UserID AS UserID, @UserType AS UserType
+            RETURN
+        END
+    END
+
+    SELECT 'Invalid Username or Password' AS Status, NULL AS UserID, NULL AS UserType
+END
+GO
+
+
+/*Testcase:
+EXEC usp_VerifyUserLogin @Username = 'annv', @PasswordAttempt = 'pass123'
+EXEC usp_VerifyUserLogin @Username = 'maintl', @PasswordAttempt = 'pass123'
+EXEC usp_VerifyUserLogin @Username = 'annv', @PasswordAttempt = 'wrongpassword'
+EXEC usp_VerifyUserLogin @Username = 'nonexistentuser', @PasswordAttempt = 'pass123'
+*/
+
+
+GO
 -- Get a list of all classes that a particular student is enrolled in
 CREATE PROCEDURE usp_GetStudentEnrollments @StudentID VARCHAR(5)
 AS
