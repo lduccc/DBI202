@@ -37,13 +37,15 @@ IF OBJECT_ID('dbo.fn_GetStudentClasses', 'IF') IS NOT NULL  DROP FUNCTION dbo.fn
 IF OBJECT_ID('dbo.fn_GetClassStudents', 'IF') IS NOT NULL DROP FUNCTION dbo.fn_GetClassStudents;
 IF OBJECT_ID('dbo.fn_CourseAverageGrade', 'FN') IS NOT NULL DROP FUNCTION dbo.fn_CourseAverageGrade;
 IF OBJECT_ID('dbo.fn_IsStudentEnrolledCourse', 'FN') IS NOT NULL DROP FUNCTION dbo.fn_IsStudentEnrolledCourse;
-IF OBJECT_ID('V_Class_Details', 'V') IS NOT NULL DROP VIEW V_Class_Details;
-IF OBJECT_ID('V_Student_Grades', 'V') IS NOT NULL DROP VIEW V_Student_Grades;
-IF OBJECT_ID('V_Course_Summary', 'V') IS NOT NULL DROP VIEW V_Course_Summary;
-IF OBJECT_ID('V_Teacher_Workload', 'V') IS NOT NULL DROP VIEW V_Teacher_Workload;
-IF OBJECT_ID('V_StudentClassStats', 'V') IS NOT NULL DROP VIEW V_StudentClassStats;
-IF OBJECT_ID('V_Student_Enrollments', 'V') IS NOT NULL DROP VIEW V_Student_Enrollments;
-IF OBJECT_ID('V_Payment_History', 'V') IS NOT NULL DROP VIEW V_Payment_History;
+IF OBJECT_ID('V_Class_Details', 'V') IS NOT NULL DROP VIEW V_Class_Details
+IF OBJECT_ID('V_Student_Grades', 'V') IS NOT NULL DROP VIEW V_Student_Grades
+IF OBJECT_ID('V_Course_Summary', 'V') IS NOT NULL DROP VIEW V_Course_Summary
+IF OBJECT_ID('V_Teacher_Workload', 'V') IS NOT NULL DROP VIEW V_Teacher_Workload
+IF OBJECT_ID('V_StudentClassStats', 'V') IS NOT NULL DROP VIEW V_StudentClassStats
+IF OBJECT_ID('V_Student_Enrollments', 'V') IS NOT NULL DROP VIEW V_Student_Enrollments
+IF OBJECT_ID('V_Payment_History', 'V') IS NOT NULL DROP VIEW V_Payment_History
+IF OBJECT_ID('V_StudentContactInfo', 'V') IS NOT NULL DROP VIEW V_StudentContactInfo
+IF OBJECT_ID('V_LatestExamResults', 'V') IS NOT NULL DROP VIEW  V_LatestExamResults
 IF OBJECT_ID('trg_UpdateCourseLastModified', 'TR') IS NOT NULL DROP TRIGGER trg_UpdateCourseLastModified;
 IF OBJECT_ID('trg_LogStudentCreation', 'TR') IS NOT NULL DROP TRIGGER trg_LogStudentCreation;
 IF OBJECT_ID('trg_LogStudentUpdate', 'TR') IS NOT NULL DROP TRIGGER trg_LogStudentUpdate;
@@ -215,6 +217,22 @@ CREATE TABLE AuditLog (
 GO
 
 -- 4. Views
+
+CREATE VIEW V_StudentContactInfo
+AS
+SELECT
+    id AS StudentID,
+    last_name + ' ' + first_name AS FullName,
+    date_birth AS DateOfBirth,
+    gender AS Gender,
+    email AS EmailAddress,
+    phone AS PhoneNumber,
+    address AS HomeAddress,
+    city AS City
+FROM
+    Student;
+GO
+
 CREATE VIEW V_Class_Details AS
 SELECT
     cl.id AS ClassID,
@@ -302,6 +320,26 @@ FROM Payment p
 JOIN Student s ON p.student_id = s.id;
 GO
 
+
+CREATE VIEW V_LatestExamResults
+AS
+SELECT
+    S.id AS StudentID,
+    S.first_name + ' ' + S.last_name AS StudentName,
+    E.id AS ExamID,
+    E.exam_type AS ExamType,
+    E.description AS ExamDescription,
+    ER.value AS Score,
+    ER.date AS ResultDate,
+    C.id AS ClassID,
+    Co.description AS CourseName
+
+FROM Exam_Result AS ER
+JOIN Student AS S ON ER.student_id = S.id
+JOIN Exam AS E ON ER.exam_id = E.id
+JOIN Class AS C ON E.class_id = C.id
+JOIN Course AS Co ON C.course_id = Co.id;
+GO
 -- 5. Functions
 CREATE FUNCTION fn_GetStudentFullName (@StudentID VARCHAR(5))
 RETURNS NVARCHAR(101)
